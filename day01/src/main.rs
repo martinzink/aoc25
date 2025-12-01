@@ -1,38 +1,53 @@
-use std::collections::HashMap;
-
-fn parse_into_vecs(input: &str) -> (Vec<u32>, Vec<u32>) {
+fn parse_input(input: &str) -> Vec<(i32, u32)> {
     input
         .lines()
         .map(|line| {
-            let (a, b) = line.split_once(char::is_whitespace).unwrap();
-            let au32 = a.trim().parse::<u32>().unwrap();
-            let bu32 = b.trim().parse::<u32>().unwrap();
-            (au32, bu32)
+            let amount = line[1..].parse::<u32>().unwrap();
+            let direction = match line.as_bytes()[0] as char {
+                'L' => -1i32,
+                'R' => 1i32,
+                _ => panic!("invalid input"),
+            };
+            (direction, amount)
         })
-        .unzip()
-}
-
-fn part_two(input: &str) -> u32 {
-    let (first, second): (Vec<u32>, Vec<u32>) = parse_into_vecs(input);
-    let counter = second
-        .into_iter()
-        .fold(HashMap::new(), |mut acc: HashMap<u32, u32>, elt| {
-            *acc.entry(elt).or_insert(0) += 1;
-            acc
-        });
-    first
-        .iter()
-        .fold(0, |a, &elt| a + counter.get(&elt).unwrap_or(&0) * elt)
+        .collect()
 }
 
 fn part_one(input: &str) -> u32 {
-    let (mut first, mut second): (Vec<u32>, Vec<u32>) = parse_into_vecs(input);
-    first.sort();
-    second.sort();
-    first
-        .iter()
-        .zip(second.iter())
-        .fold(0, |acc, (a, b)| acc + a.abs_diff(*b))
+    let inputs = parse_input(input);
+    let mut pos = 50i32;
+    let mut result = 0u32;
+    for input in inputs {
+        pos += input.0 * input.1 as i32;
+        pos = pos.rem_euclid(100);
+        if pos == 0 {
+            result += 1;
+        }
+    }
+    result
+}
+
+fn part_two(input: &str) -> u32 {
+    let inputs = parse_input(input);
+    let mut pos = 50i32;
+    let mut result = 0u32;
+    for input in inputs {
+        for _ in 0..input.1 {
+            pos += input.0;
+            match pos {
+                0 => result += 1,
+                -1 => {
+                    pos = 99;
+                }
+                100 => {
+                    pos = 0;
+                    result += 1;
+                }
+                _ => {}
+            }
+        }
+    }
+    result
 }
 
 #[cfg(test)]
@@ -41,12 +56,12 @@ mod tests {
     const EXAMPLE: &str = include_str!("example.txt");
     #[test]
     fn example_part_one() {
-        assert_eq!(part_one(EXAMPLE), 11);
+        assert_eq!(part_one(EXAMPLE), 3);
     }
 
     #[test]
     fn example_part_two() {
-        assert_eq!(part_two(EXAMPLE), 31);
+        assert_eq!(part_two(EXAMPLE), 6);
     }
 }
 
