@@ -1,47 +1,49 @@
-fn is_valid(report: &Vec<i32>) -> bool {
-    report
-        .windows(2)
-        .all(|w| 1 <= (w[1] - w[0]) && 3 >= (w[1] - w[0]))
-        || report
-            .windows(2)
-            .all(|w| 1 <= (w[0] - w[1]) && 3 >= (w[0] - w[1]))
-}
-
-fn is_valid_p2(report: &Vec<i32>) -> bool {
-    for (i, _) in report.iter().enumerate() {
-        let mut perm = (*report).clone();
-        perm.remove(i);
-        if is_valid(&perm) {
-            return true;
-        }
-    }
-    false
-}
-
-fn parse_reports(input: &str) -> Vec<Vec<i32>> {
-    input
-        .lines()
-        .map(|line| {
-            let parts = line.split_whitespace();
-            parts.map(|w| w.parse::<i32>().unwrap()).collect()
+fn parse_ranges(input: &str) -> Vec<(u64, u64)> {
+    input.split(',')
+        .map(|range| {
+            let (low_str, high_str) = range.split_once('-').unwrap();
+            (low_str.parse::<u64>().unwrap(), high_str.parse::<u64>().unwrap())
         })
         .collect()
 }
 
-fn part_two(input: &str) -> i32 {
-    let reports = parse_reports(input);
-    reports
-        .iter()
-        .filter(|report: &&Vec<i32>| is_valid_p2(*report))
-        .count() as i32
+fn part_two(input: &str) -> u64 {
+    let ranges = parse_ranges(input);
+    let mut result = 0;
+    for range in ranges {
+        for i in range.0..=range.1 {
+            let i_str = i.to_string();
+            let len = i_str.len();
+            for chunk_len in 1..=len/2 {
+                let chunk = &i_str[..chunk_len];
+                if chunk.repeat(len/chunk_len) == i_str {
+                    result += i;
+                    break;
+                }
+            }
+        }
+    }
+    result
 }
 
-fn part_one(input: &str) -> i32 {
-    let reports = parse_reports(input);
-    reports
-        .iter()
-        .filter(|report: &&Vec<i32>| is_valid(*report))
-        .count() as i32
+fn part_one(input: &str) -> u64 {
+    let ranges = parse_ranges(input);
+    let mut result = 0;
+    for range in ranges {
+        for i in range.0..=range.1 {
+            let i_str = i.to_string();
+            let len = i_str.len();
+            if len % 2 == 1 {
+                continue;
+            }
+            let first = &i_str[len/2..];
+            let second = &i_str[..len/2];
+            if first == second {
+                result += i;
+            }
+        }
+    }
+    result
 }
 
 #[cfg(test)]
@@ -50,12 +52,12 @@ mod tests {
     const EXAMPLE: &str = include_str!("example.txt");
     #[test]
     fn example_part_one() {
-        assert_eq!(part_one(EXAMPLE), 2);
+        assert_eq!(part_one(EXAMPLE), 1227775554);
     }
 
     #[test]
     fn example_part_two() {
-        assert_eq!(part_two(EXAMPLE), 4);
+        assert_eq!(part_two(EXAMPLE), 4174379265);
     }
 }
 
