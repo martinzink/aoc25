@@ -1,122 +1,59 @@
-use petgraph::graph::NodeIndex;
-use petgraph::visit::IntoNodeIdentifiers;
-use std::cmp::Ordering;
-use std::collections::HashMap;
-use std::error::Error;
-
-fn parse(input: &str) -> (petgraph::Graph<u32, ()>, Vec<Vec<u32>>) {
-    let (page_ordering_input, update_pages_input) = input.split_once("\n\n").unwrap();
-    (
-        parse_page_ordering_rules(page_ordering_input),
-        parse_update_pages(update_pages_input),
-    )
+#[derive(Debug)]
+struct FreshIdRange {
+    start: u64,
+    end: u64,
 }
 
-fn parse_page_ordering_rules(input: &str) -> petgraph::Graph<u32, ()> {
-    let edges: Vec<(u32, u32)> = input
-        .lines()
-        .map(|line| {
-            line.split_once("|")
-                .map(|(a_str, b_str)| {
-                    (b_str.parse::<u32>().unwrap(), a_str.parse::<u32>().unwrap())
-                })
-                .unwrap()
-        })
-        .collect();
-    let mut graph = petgraph::Graph::<u32, ()>::new();
-    let mut node_indices = HashMap::<u32, NodeIndex>::new();
-    for edge in edges {
-        if !node_indices.contains_key(&edge.0) {
-            node_indices.insert(edge.0, graph.add_node(edge.0));
-        }
-        if !node_indices.contains_key(&edge.1) {
-            node_indices.insert(edge.1, graph.add_node(edge.1));
-        }
-        graph.add_edge(node_indices[&edge.0], node_indices[&edge.1], ());
+impl FreshIdRange {
+    fn from_str(input: &str) -> Vec<Self> {
+        input.lines().map(|line| {
+            let (start, end) = line.split_once("-").unwrap();
+            Self {
+                start: start.parse().unwrap(),
+                end: end.parse().unwrap(),
+            }
+        }).collect()
     }
-    graph
-}
 
-fn parse_update_pages(input: &str) -> Vec<Vec<u32>> {
-    input
-        .lines()
-        .map(|line| {
-            line.split(',')
-                .filter_map(|s| s.parse::<u32>().ok())
-                .collect()
-        })
-        .collect()
-}
-
-fn is_sorted(
-    data: &[u32],
-    graph: &petgraph::Graph<u32, ()>,
-    graph_indices: &HashMap<u32, NodeIndex>,
-) -> bool {
-    data.windows(2)
-        .all(|w| compare(w[0], w[1], graph, graph_indices) == Ordering::Less)
-}
-
-fn compare(
-    a: u32,
-    b: u32,
-    graph: &petgraph::Graph<u32, ()>,
-    graph_indices: &HashMap<u32, NodeIndex>,
-) -> Ordering {
-    let node_0 = graph_indices.get(&a).unwrap();
-    let node_1 = graph_indices.get(&b).unwrap();
-    if petgraph::algo::has_path_connecting(&graph, *node_0, *node_1, None) {
-        return Ordering::Greater;
+    fn contains(&self, id: u64) -> bool {
+        self.start <= id && id <= self.end
     }
-    Ordering::Less
 }
 
-fn part_one(input: &str) -> i32 {
-    let mut sum = 0;
-    let (ordering_rules, update_pages) = parse(input);
+fn parse(input: &str) -> (Vec<FreshIdRange>, Vec<u64>) {
+    let (fresh_id_ranges_str, ids_str)= input.split_once("\n\n").unwrap();
+    (FreshIdRange::from_str(fresh_id_ranges_str), ids_str.lines().map(|line| line.parse().unwrap()).collect())
+}
 
-    for update_page in &update_pages {
-        let mut curr_graph = ordering_rules.clone();
-        curr_graph.retain_nodes(|fgr, node_index| {
-            update_page.contains(fgr.node_weight(node_index).unwrap_or(&100))
-        });
-
-        let mut curr_indices = HashMap::new();
-        for node_id in curr_graph.node_identifiers() {
-            curr_indices.insert(curr_graph[node_id], node_id);
-        }
-
-        if is_sorted(update_page, &curr_graph, &curr_indices) {
-            let middle_index = update_page.len() / 2;
-            sum += update_page.get(middle_index).unwrap();
+fn part_one(input: &str) -> u32 {
+    let (fresh_ranges, ids) = parse(input);
+    let mut result = 0u32;
+    for id in ids.iter() {
+        if fresh_ranges.iter().any(|range| range.contains(*id)) {
+            result += 1;
+            continue;
         }
     }
-    sum as i32
+    result
 }
 
-fn part_two(input: &str) -> i32 {
-    let mut sum = 0;
-    let (ordering_rules, update_pages) = parse(input);
+fn part_two(input: &str) -> u64 {
+    let (mut fresh_ranges, _ids) = parse(input);
+    fresh_ranges.sort_unstable_by(|a, b| a.start.cmp(&b.start));
 
-    for update_page in &update_pages {
-        let mut curr_graph = ordering_rules.clone();
-        curr_graph.retain_nodes(|fgr, node_index| {
-            update_page.contains(fgr.node_weight(node_index).unwrap_or(&100))
-        });
-
-        let mut curr_indices = HashMap::new();
-        for node_id in curr_graph.node_identifiers() {
-            curr_indices.insert(curr_graph[node_id], node_id);
-        }
-
-        if !is_sorted(update_page, &curr_graph, &curr_indices) {
-            let mut sorted_page = update_page.clone();
-            sorted_page.sort_by(|a, b| compare(*a, *b, &curr_graph, &curr_indices));
-            let middle_index = sorted_page.len() / 2;
-            sum += sorted_page.get(middle_index).unwrap();
-        }
+    struct Acc {
+        count: u64,
+        last_end: u64
     }
-    sum as i32
+    fresh_ranges.iter().fold(Acc{ count:0, last_end:0}, |acc: Acc, range| {
+        let start = range.start.max(acc.last_end);
+        let end = range.end + 1;
+        if start < end {
+            Acc{ count: acc.count +(end-start), last_end: end}
+        } else {
+            acc
+        }
+    }).count
 }
 
 #[cfg(test)]
@@ -125,12 +62,12 @@ mod tests {
     const EXAMPLE: &str = include_str!("example.txt");
     #[test]
     fn example_part_one() {
-        assert_eq!(part_one(EXAMPLE), 143);
+        assert_eq!(part_one(EXAMPLE), 3);
     }
 
     #[test]
     fn example_part_two() {
-        assert_eq!(part_two(EXAMPLE), 123);
+        assert_eq!(part_two(EXAMPLE), 14);
     }
 }
 
