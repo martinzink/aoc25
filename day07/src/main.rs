@@ -1,98 +1,77 @@
-struct Operation {
-    result: u64,
-    operands: Vec<u64>,
+use std::collections::{HashMap, HashSet};
+
+#[derive(Debug)]
+struct TachyonManifold {
+    start_coord: usize,
+    splitter_coords: Vec<Vec<usize>>
 }
 
-impl Operation {
-    fn munch(&self, curr_sum: u64, i: usize, operator: char, concat_enabled: bool) -> Option<u64> {
-        let mut sum = curr_sum;
-        if i >= self.operands.len() {
-            return None;
-        }
-        let rhs = self.operands[i];
-        match operator {
-            '+' => sum += rhs,
-            '*' => sum *= rhs,
-            '|' => {
-                let sum_math =
-                    sum * u64::pow(10, f64::log(rhs as f64, 10f64).floor() as u32 + 1) + rhs;
-                sum = sum_math;
+impl TachyonManifold {
+    fn new(input: &str) -> Self {
+        let mut start_coord = 0;
+        let mut splitter_coords = vec![];
+        for (_line_num, line) in input.lines().enumerate() {
+            let mut line_splitters = vec![];
+            for (i, char) in line.chars().enumerate() {
+                match char {
+                    'S' => { start_coord = i }
+                    '.' => {}
+                    '^' => { line_splitters.push(i) }
+                    _ => panic!("Invalid character: {}", char)
+                }
             }
-            _ => unreachable!(),
-        };
-        if sum > self.result {
-            None
-        } else if sum == self.result && i == self.operands.len() - 1 {
-            Some(sum)
-        } else {
-            if concat_enabled {
-                self.munch(sum, i + 1, '+', concat_enabled)
-                    .or(self.munch(sum, i + 1, '*', concat_enabled))
-                    .or(self.munch(sum, i + 1, '|', concat_enabled))
-            } else {
-                self.munch(sum, i + 1, '+', concat_enabled).or(self.munch(
-                    sum,
-                    i + 1,
-                    '*',
-                    concat_enabled,
-                ))
+            if !line_splitters.is_empty() {
+                splitter_coords.push(line_splitters);
             }
         }
+        TachyonManifold{start_coord, splitter_coords}
     }
-    fn is_valid_recursive(&self, concat_enabled: bool) -> bool {
-        let sum = *self.operands.first().unwrap();
-        if concat_enabled {
-            self.munch(sum, 1, '+', concat_enabled)
-                .or(self.munch(sum, 1, '*', concat_enabled))
-                .or(self.munch(sum, 1, '|', concat_enabled))
-                == Some(self.result)
-        } else {
-            self.munch(sum, 1, '+', concat_enabled)
-                .or(self.munch(sum, 1, '*', concat_enabled))
-                == Some(self.result)
-        }
-    }
-}
 
-fn parse(input: &str) -> Vec<Operation> {
-    input
-        .lines()
-        .map(|line| {
-            let (res_str, operands_str) = line.split_once(':').unwrap();
-            let res = res_str.parse::<u64>().unwrap();
-            let operands = operands_str
-                .trim()
-                .split(' ')
-                .map(|num| num.parse::<u64>().unwrap())
-                .collect::<Vec<u64>>();
-            Operation {
-                result: res,
-                operands,
+    fn calculate_splits(&self) -> u64 {
+        let mut splits = 0;
+        let mut curr_rays: HashSet<usize> = HashSet::new();
+        curr_rays.insert(self.start_coord);
+        for splitter_coords in &self.splitter_coords {
+            for coord in splitter_coords {
+                if curr_rays.contains(coord) {
+                    splits += 1;
+                    curr_rays.remove(coord);
+                    curr_rays.insert(*coord + 1);
+                    curr_rays.insert(*coord - 1);
+                }
             }
-        })
-        .collect()
+        }
+        splits
+    }
+
+    fn calculate_quantum_splits(&self) -> u64 {
+        let mut curr_rays: HashMap<usize, usize> = HashMap::new();
+        curr_rays.insert(self.start_coord, 1);
+        for splitter_coords in &self.splitter_coords {
+            let mut next_rays: HashMap<usize, usize> = HashMap::new();
+            for current_coord in curr_rays.keys() {
+                let number_of_timelines = *curr_rays.get(&current_coord).unwrap();
+                if splitter_coords.contains(current_coord) {
+                    *next_rays.entry(*current_coord-1).or_default() += number_of_timelines;
+                    *next_rays.entry(*current_coord+1).or_default() += number_of_timelines;
+                } else {
+                    *next_rays.entry(*current_coord).or_default() += number_of_timelines;
+                }
+            }
+            curr_rays = next_rays;
+        }
+        curr_rays.values().sum::<usize>() as u64
+    }
 }
 
 fn part_one(input: &str) -> u64 {
-    let inputs = parse(input);
-    let mut sum = 0;
-    for operation in inputs {
-        if operation.is_valid_recursive(false) {
-            sum += operation.result;
-        }
-    }
-    sum
+    let tachyon_manifold = TachyonManifold::new(input);
+    tachyon_manifold.calculate_splits()
 }
 
 fn part_two(input: &str) -> u64 {
-    let inputs = parse(input);
-    let mut sum = 0;
-    for operation in inputs {
-        if operation.is_valid_recursive(true) {
-            sum += operation.result;
-        }
-    }
-    sum
+    let tachyon_manifold = TachyonManifold::new(input);
+    tachyon_manifold.calculate_quantum_splits()
 }
 
 #[cfg(test)]
@@ -101,12 +80,12 @@ mod tests {
     const EXAMPLE: &str = include_str!("example.txt");
     #[test]
     fn example_part_one() {
-        assert_eq!(part_one(EXAMPLE), 3749);
+        assert_eq!(part_one(EXAMPLE), 21);
     }
 
     #[test]
     fn example_part_two() {
-        assert_eq!(part_two(EXAMPLE), 11387);
+        assert_eq!(part_two(EXAMPLE), 40);
     }
 }
 
