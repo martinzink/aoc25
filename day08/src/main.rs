@@ -1,171 +1,96 @@
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::ops::{Add, Mul, Sub};
+use std::collections::{HashMap, HashSet};
+use petgraph::graph::UnGraph;
+use itertools::Itertools;
+use petgraph::algo::connected_components;
+use petgraph::visit::Walker;
 
-#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash, Ord, PartialOrd)]
-struct Coord(i32, i32);
-
-impl Sub for &Coord {
-    type Output = Coord;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        Coord(self.0 - rhs.0, self.1 - rhs.1)
+fn parse_input(input: &str) -> (Vec<[f64; 3]>, UnGraph::<usize, f64>, HashMap<usize, petgraph::graph::NodeIndex>) {
+    let coords: Vec<[f64;3]> = input.lines().map(|line| {
+        let (x_str, yz_str) = line.split_once(',').unwrap();
+        let (y_str, z_str) = yz_str.split_once(',').unwrap();
+        [x_str.parse().unwrap(), y_str.parse().unwrap(), z_str.parse().unwrap()]
+    }).collect();
+    let mut g = UnGraph::<usize, f64>::new_undirected();
+    let mut node_ids = HashMap::new();
+    for (id, _coord) in coords.iter().enumerate() {
+        node_ids.insert(id, g.add_node(id));
     }
+    (coords, g, node_ids)
 }
 
-impl Add<Coord> for &Coord {
-    type Output = Coord;
+fn calc_connections(coords: &[[f64; 3]]) -> Vec<(f64, usize, usize)> {
+    let mut connections = Vec::new();
 
-    fn add(self, rhs: Coord) -> Self::Output {
-        Coord(self.0 + rhs.0, self.1 + rhs.1)
+    for coord_pair in coords.iter().enumerate().combinations(2) {
+        let (id1, c1) = coord_pair[0];
+        let (id2, c2) = coord_pair[1];
+        let dist_sq =  (c2[0] - c1[0]).powi(2) + (c2[1] - c1[1]).powi(2) + (c2[2] - c1[2]).powi(2);
+        connections.push((dist_sq, id1, id2));
     }
+    connections.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    connections
 }
 
-impl Mul<i32> for Coord {
-    type Output = Coord;
+fn part_one(input: &str, connection_size: usize) -> usize {
+    let (coords, mut g, node_ids) = parse_input(input);
 
-    fn mul(self, rhs: i32) -> Self::Output {
-        Coord(self.0 * rhs, self.1 * rhs)
-    }
-}
-
-impl Coord {
-    fn calculate_antinodes(&self, rhs: &Coord) -> [Coord; 2] {
-        let diff: Coord = self - rhs;
-        [self + diff, rhs - &diff]
+    for connection in calc_connections(&coords).iter().take(connection_size) {
+        g.add_edge(node_ids[&connection.1], node_ids[&connection.2], connection.0);
     }
 
-    fn within_bounds(&self, max_i: i32, max_j: i32) -> bool {
-        self.0 <= max_i && self.1 <= max_j && self.0 >= 0 && self.1 >= 0
-    }
-
-    fn calculate_antinodes_with_resonant_harmonics(
-        &self,
-        rhs: &Coord,
-        max_i: i32,
-        max_j: i32,
-    ) -> Vec<Coord> {
-        let diff: Coord = self - rhs;
-        let mut res: Vec<Coord> = Vec::new();
-        let mut added_antinode = true;
-        let mut i = 0;
-        while added_antinode {
-            added_antinode = false;
-            let diff_i = diff * i;
-            let harmonics_1 = self + diff_i;
-            let harmonics_2 = rhs - &diff_i;
-            if harmonics_1.within_bounds(max_i, max_j) {
-                res.push(harmonics_1);
-                added_antinode = true;
-            }
-            if harmonics_2.within_bounds(max_i, max_j) {
-                res.push(harmonics_2);
-                added_antinode = true;
-            }
-            i += 1;
+    let mut visited = HashSet::new();
+    let mut component_sizes = Vec::new();
+    for coord in node_ids {
+        if visited.contains(&coord.1) {
+            continue;
         }
-        res
-    }
-}
-
-fn part_one(input: &str) -> u64 {
-    let matrix = utils::matrix::parse_matrix(input);
-    let max_i = matrix.len() as i32 - 1;
-    let max_j = matrix[0].len() as i32 - 1;
-    let mut antenna_types = HashMap::new();
-    for i in 0..matrix.len() {
-        for j in 0..matrix[0].len() {
-            let char = matrix[i][j];
-            match char {
-                '.' => {}
-                x => antenna_types
-                    .entry(x)
-                    .or_insert(vec![])
-                    .push(Coord(i as i32, j as i32)),
-            }
+        let bfs = petgraph::visit::Bfs::new(&g, coord.1);
+        let mut size = 0;
+        for nx in bfs.iter(&g) {
+            visited.insert(nx);
+            size += 1;
         }
+        component_sizes.push(size);
     }
-
-    let mut anti_nodes = HashSet::new();
-
-    for (_antenna_type, antennas) in &antenna_types {
-        for (i, antenna_coord_i) in antennas.iter().enumerate() {
-            for (j, antenna_coord_j) in antennas.iter().enumerate() {
-                if i == j {
-                    continue;
-                }
-                let anti_nodes_i_j = antenna_coord_i.calculate_antinodes(antenna_coord_j);
-                anti_nodes.insert(anti_nodes_i_j[0]);
-                anti_nodes.insert(anti_nodes_i_j[1]);
-            }
-        }
-    }
-    anti_nodes
-        .iter()
-        .filter(|coord| coord.0 >= 0 && coord.1 >= 0 && coord.0 <= max_i && coord.1 <= max_j)
-        .count() as u64
+    component_sizes.sort_unstable();
+    component_sizes.reverse();
+    component_sizes.iter().take(3).product()
 }
 
 fn part_two(input: &str) -> u64 {
-    let matrix = utils::matrix::parse_matrix(input);
-    let max_i = matrix.len() as i32 - 1;
-    let max_j = matrix[0].len() as i32 - 1;
-    let mut antenna_types = HashMap::new();
-    for i in 0..matrix.len() {
-        for j in 0..matrix[0].len() {
-            let char = matrix[i][j];
-            match char {
-                '.' => {}
-                x => antenna_types
-                    .entry(x)
-                    .or_insert(vec![])
-                    .push(Coord(i as i32, j as i32)),
-            }
-        }
-    }
+    let (coords, mut g, node_ids) = parse_input(input);
 
-    let mut anti_nodes = HashSet::new();
+    let mut connections = calc_connections(&coords);
+    connections.reverse();
 
-    for (_antenna_type, antennas) in &antenna_types {
-        for (i, antenna_coord_i) in antennas.iter().enumerate() {
-            for (j, antenna_coord_j) in antennas.iter().enumerate() {
-                if i == j {
-                    continue;
-                }
-                let anti_nodes_i_j = antenna_coord_i.calculate_antinodes_with_resonant_harmonics(
-                    antenna_coord_j,
-                    max_i,
-                    max_j,
-                );
-                for anti_node_i_j in anti_nodes_i_j {
-                    anti_nodes.insert(anti_node_i_j);
-                }
-            }
-        }
+    let mut res = 0u64;
+    while connected_components(&g) > 1 {
+        let c = connections.pop().unwrap();
+        g.add_edge(node_ids[&c.1], node_ids[&c.2], c.0);
+        res = coords[c.1][0] as u64 * coords[c.2][0] as u64
     }
-    anti_nodes.len() as u64
+    res
 }
+
 
 #[cfg(test)]
 mod tests {
     use super::*;
     const EXAMPLE: &str = include_str!("example.txt");
-    const EXAMPLE_SMALL: &str = include_str!("example_small.txt");
 
     #[test]
     fn example_part_one() {
-        assert_eq!(part_one(EXAMPLE), 14);
+        assert_eq!(part_one(EXAMPLE, 10), 40);
     }
 
     #[test]
     fn example_part_two() {
-        assert_eq!(part_two(EXAMPLE_SMALL), 9);
-        assert_eq!(part_two(EXAMPLE), 34);
+        assert_eq!(part_two(EXAMPLE), 25272);
     }
 }
 
 fn main() {
     const INPUT: &str = include_str!("input.txt");
-    println!("{} part one: {}", env!("CARGO_PKG_NAME"), part_one(INPUT));
+    println!("{} part one: {}", env!("CARGO_PKG_NAME"), part_one(INPUT, 1000));
     println!("{} part two: {}", env!("CARGO_PKG_NAME"), part_two(INPUT));
 }
